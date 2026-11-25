@@ -132,7 +132,11 @@ r = c.send_command("drop_after_reply")
 check("call that precedes a hang-up still returns", r.get("success") is True, r)
 time.sleep(0.4)   # bridge has hung up; its pipe is being re-created (missing for ~0.3s)
 t0 = time.monotonic()
-r = c.send_command("ok_cmd")        # NON-idempotent-looking name: only safe if it was never sent
+try:
+    r = c.send_command("ok_cmd")
+except ConnectionError as e:
+    check("dropped connection reports unknown outcome", "outcome is unknown" in str(e), e)
+    r = c.send_command("ok_cmd")   # explicit retry, after state inspection in a real session
 dt = time.monotonic() - t0
 check("reconnects across pipe re-creation", r.get("success") is True, r)
 check("...waited for the pipe (backoff) rather than failing", 0.05 < dt < 2.5, dt)
@@ -146,7 +150,7 @@ try:
     c2.send_command("hang_write_memory", {"address": "0x1", "bytes": [1]})
     check("write timeout raises", False)
 except ConnectionError as e:
-    check("timed-out write -> error says outcome unknown", "may or may not have run" in str(e), e)
+    check("timed-out write -> error says outcome unknown", "outcome is unknown" in str(e), e)
 time.sleep(0.5)
 check("timed-out write was sent exactly once", seen.get("hang_write_memory") == 1, seen)
 
@@ -155,10 +159,15 @@ r = c2.send_command("ok_cmd")
 check("usable after timeout", r.get("success") is True, r)
 c2.close(); time.sleep(0.5)
 
-# --- idempotent command IS retried after a timeout
+# --- even a read-like command is not silently repeated after a timeout
 c3 = new_client(timeout=0.8)
-r = c3.send_command("get_hang_once")
-check("read-only command retried after timeout", r.get("success") is True and seen["get_hang_once"] == 2, (r, seen))
+try:
+    c3.send_command("get_hang_once")
+    check("read timeout raises", False)
+except ConnectionError as e:
+    check("read timeout reports unknown outcome", "outcome is unknown" in str(e), e)
+time.sleep(0.2)
+check("read timeout was sent once", seen.get("get_hang_once") == 1, seen)
 c3.close(); time.sleep(0.5)
 
 # --- invalid UTF-8 in a reply no longer kills the call

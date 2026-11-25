@@ -2572,13 +2572,14 @@ rejected with `INVALID_PARAMS` rather than silently scanning for nothing.
 
 **Parameters:**
 - `description` (str, required): Display name.
-- `address` (str, required): Memory address.
-- `type` (str, default=`"4 Bytes"`): Value type.
+- `address` (str): Memory address; required for ordinary value records and omitted for Auto Assembler records.
+- `var_type` (str, default=`"dword"`): Value type; use `autoassembler` for a script record.
+- `script` (str): Auto Assembler script text, required for script records. A UTF-8 BOM is stripped and the record is created inactive.
 
 **Returns:** JSON with:
 - `success` (bool)
 - `id` (int): New record ID.
-- `description` (str)
+- `record` (object): Description, type, address, and enabled state.
 
 ---
 
@@ -3268,7 +3269,7 @@ All commands return `success: false` with an `error` field on failure:
 | `"DBVM watch returned nil"` | DBVM not activated in CE settings. | Enable DBVM in Edit → Settings → Debugger. |
 | `"Cheat Engine Bridge not running"` | Named pipe not found. | Start CE with `ce_mcp_bridge.lua` loaded. |
 | `"Response too large"` | Pipe response exceeded 32 MB limit. | Reduce `size` or `max` parameter. |
-| `"Pipe Communication failed"` | Named pipe connection lost. | Read-only commands are retried once automatically. State-changing commands are not re-sent after the request was delivered: the error says the outcome is unknown, so check the target's state before repeating. |
+| `"Pipe Communication failed"` | Named pipe connection lost. | Commands are not automatically re-sent after a communication failure. The outcome may be unknown; check target state before repeating. |
 | `"Invalid JSON received from CE"` | Corrupt pipe response. | Usually transient; retry the command. |
 | `"Shell execution disabled"` | `run_command` or `shell_execute` called without `CE_MCP_ALLOW_SHELL=1`. | Set environment variable to enable. |
 | `"Process not opened"` | No process is attached to CE. | Use `open_process` or attach via CE GUI. |

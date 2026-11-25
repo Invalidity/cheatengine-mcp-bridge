@@ -37,7 +37,7 @@ if sys.platform == "win32":
             stdin = anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8", newline='\n'))
         if not stdout:
             # Use newline='\n' to prevent CRLF translation on Windows
-            stdout = anyio.wrap_file(TextIOWrapper(sys.stdout.buffer, encoding="utf-8", newline='\n'))
+            stdout = anyio.wrap_file(TextIOWrapper(_mcp_stdout.buffer, encoding="utf-8", newline='\n'))
 
         read_stream_writer, read_stream = anyio.create_memory_object_stream(0)
         write_stream, write_stream_reader = anyio.create_memory_object_stream(0)
@@ -282,6 +282,7 @@ def _close_handle_quietly(handle):
 class CEBridgeClient:
     def __init__(self):
         self.timeout_seconds = CE_MCP_TIMEOUT_SECONDS
+        self._command_lock = threading.Lock()
         self._ids = itertools.count(1)
         self._request_sent = False   # set once the full request frame has been written
         self._ever_connected = False
@@ -348,17 +349,17 @@ class CEBridgeClient:
         return ConnectionError(f"{self._endpoint_description()} is not reachable{detail}.")
 
     def send_command(self, method, params=None, idempotent=None):
-        """Send command to CE Bridge, reconnecting once on failure.
+        # One pipe, one outstanding exchange: concurrent MCP calls must not
+        # interleave request frames or consume one another's replies.
+        with self._command_lock:
+            return self._send_command_locked(method, params, idempotent)
 
-        Read-only commands are re-sent after a failed attempt. Commands that change
-        state are re-sent only if the request provably never left this process
-        (connect/write failure); otherwise the error says the outcome is unknown.
-        """
+    def _send_command_locked(self, method, params=None, idempotent=None):
+        """Send one request; a transport failure leaves its outcome unknown."""
         denied = POLICY.check(method, params)
         if denied:
             return denied
-        max_attempts = 2
-        retry_after_send = is_idempotent(method) if idempotent is None else idempotent
+        max_attempts = 1
         last_error = None
 
         for attempt in range(max_attempts):
@@ -404,14 +405,10 @@ class CEBridgeClient:
             except (OSError, ConnectionError, TimeoutError) as e:
                 self.close()
                 last_error = self._communication_error(e)
-                if self._request_sent and not retry_after_send:
-                    raise ConnectionError(
-                        f"Command '{method}' was sent to Cheat Engine but no reply was received; "
-                        f"it may or may not have run. Check the target's state before repeating it. "
-                        f"Cause: {last_error}"
-                    ) from last_error
-                if attempt < max_attempts - 1:
-                    continue  # Retry
+                raise ConnectionError(
+                    f"Command '{method}' outcome is unknown; check Cheat Engine and the target "
+                    f"before retrying. Cause: {last_error}"
+                ) from last_error
 
         # All retries failed
         if last_error:
@@ -1642,13 +1639,14 @@ def get_memory_record(id: int = None, description: str = None) -> str:
     return format_result(ce_client.send_command("get_memory_record", params))
 
 @mcp.tool()
-def create_memory_record(description: str, address: str, var_type: str = "dword") -> str:
+def create_memory_record(description: str, address: str = "", var_type: str = "dword", script: str = "") -> str:
     """Create a new memory record in the cheat table address list.
 
     Args:
         description: Human-readable label for the new entry.
-        address: Address string (hex, symbol, or pointer expression) to watch.
-        var_type: Variable type — byte, word, dword, qword, float, double, string, bytearray (default: dword).
+        address: Address string for ordinary records; optional for Auto Assembler scripts.
+        var_type: byte, word, dword, qword, float, double, string, bytearray or autoassembler.
+        script: Auto Assembler script text, required when var_type is autoassembler. Created inactive.
 
     Returns JSON with: success, id, record ({id, description, address, type, value, offsets, enabled}).
     """
@@ -1656,6 +1654,7 @@ def create_memory_record(description: str, address: str, var_type: str = "dword"
         "description": description,
         "address": address,
         "type": var_type,
+        "script": script,
     }))
 
 @mcp.tool()

@@ -145,12 +145,17 @@ try:
     mod.batch_commands([{"method": "hang_write", "params": {}}])
     check("non-read-only batch times out with an error", False)
 except ConnectionError as e:
-    check("non-read-only batch: 'may or may not have run'", "may or may not have run" in str(e), e)
+    check("non-read-only batch reports unknown outcome", "outcome is unknown" in str(e), e)
 time.sleep(0.4)
 check("non-read-only batch sent exactly once", seen.get("batch:hang_write") == 1, seen)
 
-out = json.loads(mod.batch_commands([{"method": "get_hang_once"}, {"method": "read_memory", "params": {}}]))
-check("all-read-only batch is retried after a timeout", out.get("success") is True and seen.get("batch:get_hang_once") == 2, (out, seen))
+try:
+    mod.batch_commands([{"method": "get_hang_once"}, {"method": "read_memory", "params": {}}])
+    check("read-only batch timeout raises", False)
+except ConnectionError as e:
+    check("read-only batch reports unknown outcome", "outcome is unknown" in str(e), e)
+time.sleep(0.4)
+check("read-only batch sent once", seen.get("batch:get_hang_once") == 1, seen)
 
 # ---- idempotency of the new tool names
 for m, want in [("bridge_status", True), ("get_job", True), ("get_job_result", True), ("list_jobs", True), ("read_struct", True),

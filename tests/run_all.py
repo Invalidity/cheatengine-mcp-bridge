@@ -24,6 +24,9 @@ EXIT_SKIP = 77
 # (name, file, needs python deps for the MCP server?)
 SUITES = [
     ("lua robustness", "test_lua_robustness.py", False),
+    ("lua handles", "test_lua_handle.py", False),
+    ("lua float", "test_lua_float.py", False),
+    ("lua table records", "test_lua_table_records.py", False),
     ("lua jobs",       "test_lua_jobs.py",       False),
     ("lua analysis",   "test_lua_analysis.py",   False),
     ("lua breakpoints", "test_lua_breakpoints.py", False),
@@ -31,6 +34,7 @@ SUITES = [
     ("lua pathsets",  "test_lua_pathsets.py",   False),
     ("lua load",      "test_lua_load.py",       False),
     ("client retry",   "test_client_retry.py",   True),
+    ("client concurrency", "test_client_concurrency.py", True),
     ("client jobs",    "test_client_jobs.py",    True),
     ("client analysis", "test_client_analysis.py", True),
     ("policy",         "test_policy.py",         True),
