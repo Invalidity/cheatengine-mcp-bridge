@@ -34,9 +34,21 @@ You need Windows, Cheat Engine 7.x and Python 3.10+.
 
 ## How it works
 
+```mermaid
+flowchart TD
+    AI[AI agent: Claude, Codex, Cursor, Copilot]
+    AI -->|MCP over stdio| MCP[mcp_cheatengine.py<br/>Python MCP server]
+    MCP <-->|Named pipe| PIPE["\\.\pipe\CE_MCP_Bridge_v99"]
+    PIPE <--> LUA
+    subgraph CE[Cheat Engine]
+        LUA[ce_mcp_bridge.lua<br/>worker thread + main thread]
+    end
+    LUA -->|CE Lua API| TARGET[Target process]
 ```
-AI client ──MCP──▶ mcp_cheatengine.py ──named pipe──▶ ce_mcp_bridge.lua (inside Cheat Engine) ──▶ target process
-```
+
+1. **Your AI client** starts the Python server and talks to it over MCP.
+2. **The Python server** turns each tool call into a command and sends it down a named pipe.
+3. **The Lua bridge** runs inside Cheat Engine, carries out the command and sends back the result.
 
 ## Documentation
 
