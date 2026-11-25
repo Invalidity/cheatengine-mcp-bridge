@@ -2,186 +2,104 @@
 
 # Cheat Engine MCP Bridge
 
-**Let multibillion $ AI datacenters analyze the program memory for you.**
+**Let an AI agent work with Cheat Engine for you.** Ask in plain language, and the agent reads memory, scans for
+values, follows pointers, disassembles code and sets breakpoints through Cheat Engine.
 
-Create mods, trainers, security audits, game bots, accelerate RE, or do anything else with any program and game in a fraction of a time.
+Use it to build mods and trainers, study how a program works, or speed up reverse engineering.
 
-[![Server](https://img.shields.io/badge/server-13.0.0-blue.svg)](#what-this-fork-changes) [![Bridge](https://img.shields.io/badge/bridge-12.0.0-blue.svg)](#) [![MCP SDK](https://img.shields.io/badge/mcp%20sdk-2.x-purple.svg)](https://py.sdk.modelcontextprotocol.io/) [![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)](https://python.org) [![Offline tests](https://github.com/Invalidity/cheatengine-mcp-bridge/actions/workflows/offline-tests.yml/badge.svg)](https://github.com/Invalidity/cheatengine-mcp-bridge/actions/workflows/offline-tests.yml)
+[![Server](https://img.shields.io/badge/server-13.0.0-blue.svg)](#whats-new-in-this-fork)
+[![Bridge](https://img.shields.io/badge/bridge-12.0.0-blue.svg)](#how-it-works)
+[![MCP SDK](https://img.shields.io/badge/mcp%20sdk-2.x-purple.svg)](https://py.sdk.modelcontextprotocol.io/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)](https://python.org)
+[![Offline tests](https://github.com/Invalidity/cheatengine-mcp-bridge/actions/workflows/offline-tests.yml/badge.svg)](https://github.com/Invalidity/cheatengine-mcp-bridge/actions/workflows/offline-tests.yml)
 
-> [!IMPORTANT]
-> **This is a maintained fork** of [miscusi-peek/cheatengine-mcp-bridge](https://github.com/miscusi-peek/cheatengine-mcp-bridge).
-> It runs on the **MCP Python SDK 2.x**, integrates open upstream pull requests, and adds reliability, safety and test
-> work on top. See [What this fork changes](#what-this-fork-changes). All credit for the original bridge goes to
-> [@miscusi-peek](https://github.com/miscusi-peek) and the upstream contributors.
-
----
-
-## What this fork changes
-
-Compared with upstream `main` at [`6bd7ce9`](https://github.com/miscusi-peek/cheatengine-mcp-bridge/commit/6bd7ce90479250a9b4b75e7944df9c105ecb2572) (2026-08-14):
-
-**MCP SDK 2.x and protocol features**
-- Migrated from `FastMCP` (SDK 1.x) to `MCPServer` (SDK 2.x, `mcp>=2.3,<3`). Upstream still pins `mcp<2`.
-- The Windows CRLF fix no longer monkey-patches the SDK: the server passes LF-only streams to the SDK's public
-  `stdio_server(stdin, stdout)` parameters.
-- **Tool annotations** on all 211 tools (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`),
-  derived from the capability tiers: 119 read-only, 61 destructive, 31 additive. Clients can use them to auto-approve
-  reads and confirm writes. `batch_commands` and unknown tools get the most cautious hints.
-- **Server instructions** sent at connect time (unknown-outcome rule, one client per pipe, jobs for long scans).
-- **Doc resources**: `cheatengine://docs/command-reference` and `cheatengine://docs/guide`.
-
-**Integrated upstream pull requests** (authors credited in the commit history)
-- [#65](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/65) and [#67](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/67)
-  by [@fhjordskhkjel](https://github.com/fhjordskhkjel): async scan jobs, PE/RTTI/xref analysis, struct recovery,
-  breakpoint control, two-run pointer path comparison, capability profiles, the offline test suites, and framing/JSON
-  reliability fixes.
-- Parts of [#66](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/66) and all of
-  [#71](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/71) by
-  [@397227196zyh-ops](https://github.com/397227196zyh-ops): breakpoint hit `count`, explicit `INVALID_ADDRESS`,
-  corrected test documentation and the pipe-busy (error 231) explanation.
-
-**Fixes and hardening**
-- **No automatic retries, ever.** A failed or timed-out exchange has an *unknown* outcome; the client reports that
-  instead of re-sending, so a write or code injection can never run twice. Calls are serialized on the one pipe.
-- `ERROR_PIPE_BUSY` is handled while the bridge re-creates its pipe.
-- Window handles accept `0x`-prefixed hex, bare hex and integers
-  ([#69](https://github.com/miscusi-peek/cheatengine-mcp-bridge/issues/69)).
-- Fractional float/double values are written as little-endian IEEE bytes
-  ([#41](https://github.com/miscusi-peek/cheatengine-mcp-bridge/issues/41)).
-- Auto Assembler script records (optional, created inactive, BOM stripped)
-  ([#53](https://github.com/miscusi-peek/cheatengine-mcp-bridge/issues/53)).
-- Offline regression tests for each fix, and CI that runs the Python suites.
-
-**Not taken (yet)**
-- [#68](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/68) (patch journal with undo): its process identity
-  check (PID plus optional name) can match a different process instance, so undo cannot rely on it as written.
-- [#70](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/70) (SDK 2.x): superseded by the migration above.
-- [#63](https://github.com/miscusi-peek/cheatengine-mcp-bridge/issues/63) (disconnects during long zero-value scans):
-  use `start_job` for long scans; a long live zero-value scan has not been tested.
-
-### Verification status
-
-| Check | Kind | Result |
-|---|---|---|
-| 15 offline suites (`tests/run_all.py`): real Lua bridge in CE's Lua 5.3 DLL against a fake CE API, Python client against a fake bridge on a real named pipe | Offline | All pass on SDK 2.3.0 |
-| MCP stdio handshake: 211 tools with annotations, 2 resources, instructions, LF-only output | Offline | Pass |
-| 64-bit CE tutorial: attach, modules, MZ header read, value scan, narrow, write and read back, tutorial accepts the change | Live, CE 7.7 | Passed with this bridge code on the SDK 1.x server; not yet repeated on the SDK 2.x server |
-
-Offline tests prove the bridge and client logic, not Cheat Engine's real API. Debugger, DBVM, kernel and pointer-scan
-tools have not been verified live in this fork.
+> [!NOTE]
+> This is a fork of [miscusi-peek/cheatengine-mcp-bridge](https://github.com/miscusi-peek/cheatengine-mcp-bridge).
+> It runs on the current MCP Python SDK (2.x), includes several open upstream pull requests, and adds safety and
+> reliability fixes. Credit for the original goes to [@miscusi-peek](https://github.com/miscusi-peek) and its
+> contributors. See [What's new in this fork](#whats-new-in-this-fork).
 
 ---
 
-## The Problem
+## What you can ask
 
-You're staring at gigabytes of memory. Millions of addresses. Thousands of functions. Finding *that one pointer*, *that one structure* takes **days or weeks** of manual work.
+> *"Find the function that decrypts incoming packets."*
+> *"Which instruction writes to my health value?"*
+> *"Make an AOB signature that still works after the next game update."*
+> *"What C++ class is the object at this address?"*
 
-**What if you could just ask?**
+Your agent can:
 
-> *"Find the packet decryptor hook."*  
-> *"Find the OPcode of character coordinates."*  
-> *"Find the OPcode of health values."*  
-> *"Find the unique AOB pattern to make my trainer reliable after game updates."*
-
-**That's exactly what this does.**
-
-_- Stop clicking through hex dumps and start having conversations with the memory._
-
----
-
-## What You Get:
-
-| Before (Manual) | After (AI Agent + MCP) |
-|-----------------|---------------------|
-| Day 1: Find packet address | Minute 1: "Find RX packet decryption hook" |
-| Day 2: Trace what writes to it | Minute 3: "Generate unique AOB signature to make it update persistent" |
-| Day 3: Find RX hook | Minute 6: "Find movement OPcodes" |
-| Day 4: Document structure | Minute 10: "Create python interpreter of hex to plain text" |
-| Day 5: Game updates, start over | **Done.** |
-
-**Your AI can now:**
-- Read any memory instantly (integers, floats, strings, pointers)
-- Follow pointer chains: `[[base+0x10]+0x20]+0x8` → resolved in ms
-- Auto-analyze structures with field types and values
-- Identify C++ objects via RTTI: *"This is a CPlayer object"*
-- Disassemble and analyze functions
-- Debug invisibly with hardware breakpoints + Ring -1 hypervisor
-- And much more!
+- Read and write memory: integers, floats, strings, raw bytes and pointer chains
+- Scan for values and byte patterns, then narrow the results
+- Disassemble functions and find what calls or references them
+- Identify C++ objects with RTTI and recover their structure layout
+- Find pointer paths and keep only the ones that survive a game restart
+- Set hardware breakpoints, or trace with DBVM without touching the target's code
+- Run long scans in the background without freezing Cheat Engine
 
 ---
 
-## How It Works
+## How it works
+
 ```mermaid
 flowchart TD
-    AI[AI Agent: Claude/Cursor/Copilot]
-
-    AI -->|MCP Protocol - JSON-RPC over stdio| MCP
-
-    MCP[mcp_cheatengine.py - Python MCP Server]
-
-    MCP <-->|Named Pipe - Async| PIPE
-
-    PIPE["\\.\\pipe\\CE_MCP_Bridge_v99"]
-
-    PIPE <--> CE
-
-    subgraph CE[Cheat Engine - DBVM Mode]
-        subgraph LUA[ce_mcp_bridge.lua]
-            WORKER[Worker Thread - Blocking I/O]
-            MAIN[Main Thread - GUI + CE API]
-            WORKER <-->|Sync| MAIN
-        end
+    AI[AI agent: Claude, Codex, Cursor, Copilot]
+    AI -->|MCP over stdio| MCP[mcp_cheatengine.py<br/>Python MCP server]
+    MCP <-->|Named pipe| PIPE["\\.\pipe\CE_MCP_Bridge_v99"]
+    PIPE <--> LUA
+    subgraph CE[Cheat Engine]
+        LUA[ce_mcp_bridge.lua<br/>worker thread + main thread]
     end
-
-    MAIN -->|Memory Access| TARGET[Target .exe]
+    LUA -->|CE Lua API| TARGET[Target process]
 ```
+
+There are three parts:
+
+1. **Your AI client** starts the Python server and talks to it over MCP.
+2. **The Python server** (`mcp_cheatengine.py`) turns each tool call into a command and sends it down a named pipe.
+3. **The Lua bridge** (`ce_mcp_bridge.lua`) runs inside Cheat Engine, carries out the command and sends back the
+   result.
+
 ---
 
-## Installation
+## Quick start
+
+### 1. Install
+
+You need Windows, Cheat Engine 7.x and Python 3.10 or newer.
 
 ```bash
 pip install -r MCP_Server/requirements.txt
 ```
-Or manually:
-```bash
-pip install "mcp>=2.3,<3" pywin32
-```
 
-This fork needs the **MCP Python SDK 2.x**. If you installed upstream's requirements before, upgrade `mcp` (upstream
-pins `mcp<2`). Use a virtual environment if other tools on the machine still need SDK 1.x.
+This installs the MCP Python SDK 2.x and `pywin32`. If you used the original project before, this upgrades `mcp`
+from 1.x. Use a virtual environment if other tools on your machine still need SDK 1.x.
 
-> [!NOTE]
-> Native pipe mode is **Windows only** because it uses Named Pipes (`pywin32`). Use TCP relay transport when the MCP server runs outside the Windows environment that hosts Cheat Engine and cannot open the named pipe directly.
+### 2. Load the bridge in Cheat Engine
 
----
+In Cheat Engine, choose **File → Execute Script**, open `MCP_Server/ce_mcp_bridge.lua` and click **Execute**.
 
-## Quick Start
-
-### 1. Load Bridge in Cheat Engine
-1. Enable DBVM in Cheat Engine if you plan to use DBVM tools.
-2. Open Cheat Engine's Lua Engine or script executor.
-   - Preferred: `File` -> `Execute Script` -> open `MCP_Server/ce_mcp_bridge.lua` -> `Execute`.
-   - If your Cheat Engine build does not show `File` -> `Execute Script`, use `Table` -> `Show Cheat Table Lua Script`, paste the `dofile(...)` line below, and execute it:
+If your build has no Execute Script item, open **Table → Show Cheat Table Lua Script** and run this line instead:
 
 ```lua
 dofile([[C:\path\to\cheatengine-mcp-bridge\MCP_Server\ce_mcp_bridge.lua]])
 ```
 
-Look for: `[MCP v12.0.0] MCP Server Listening on: CE_MCP_Bridge_v99`
+When it works, Cheat Engine prints: `[MCP v12.0.0] MCP Server Listening on: CE_MCP_Bridge_v99`
 
-To start the bridge automatically with Cheat Engine, put a one-line loader in CE's `autorun` folder (the path
-`getAutorunPath()` returns, usually `C:\Program Files\Cheat Engine\autorun\`):
+> [!TIP]
+> To load the bridge every time Cheat Engine starts, save that `dofile` line as a `.lua` file in Cheat Engine's
+> `autorun` folder (usually `C:\Program Files\Cheat Engine\autorun\`).
 
-```lua
--- zz_mcp_bridge.lua
-dofile([[C:\path\to\cheatengine-mcp-bridge\MCP_Server\ce_mcp_bridge.lua]])
-```
+### 3. Connect your AI client
 
-### 2. Configure MCP Client
-Add to your MCP configuration (e.g., `mcp_config.json`):
+**Claude Code**: add this to your project's `.mcp.json`, or run
+`claude mcp add cheatengine -- python C:/path/to/MCP_Server/mcp_cheatengine.py`
+
 ```json
 {
-  "servers": {
+  "mcpServers": {
     "cheatengine": {
       "command": "python",
       "args": ["C:/path/to/MCP_Server/mcp_cheatengine.py"]
@@ -189,23 +107,8 @@ Add to your MCP configuration (e.g., `mcp_config.json`):
   }
 }
 ```
-Restart the IDE to load the MCP server config.
 
-For Claude Code, add it to the project's `.mcp.json` (or run `claude mcp add cheatengine -- python C:/path/to/MCP_Server/mcp_cheatengine.py`):
-
-```json
-{
-  "mcpServers": {
-    "cheatengine": {
-      "command": "python",
-      "args": ["C:/path/to/MCP_Server/mcp_cheatengine.py"],
-      "env": { "CE_MCP_PROFILE": "analysis" }
-    }
-  }
-}
-```
-
-For Codex, add a TOML server block to `~/.codex/config.toml`:
+**Codex**: add this to `~/.codex/config.toml`. Single quotes keep the backslashes literal.
 
 ```toml
 [mcp_servers.cheatengine]
@@ -213,351 +116,282 @@ command = "python"
 args = ['C:\path\to\cheatengine-mcp-bridge\MCP_Server\mcp_cheatengine.py']
 ```
 
-Use single quotes for the Windows path so TOML treats backslashes literally.
+**VS Code, Cursor and others**: use the same `command` and `args` in your client's MCP config, then restart it.
 
-#### TCP relay transport
+### 4. Check the connection
 
-The TCP relay lets `mcp_cheatengine.py` talk to Cheat Engine through a TCP socket instead of opening the Windows named pipe itself. Cheat Engine and the Lua bridge still run on Windows, while the MCP server can run anywhere that can reach the relay: another Windows process, a VM, a container, a Linux host, or a remote machine. This can also be used with WSL without changing the Lua bridge.
+Ask your agent to call `ping`. You should get:
 
-1. On Windows, load `MCP_Server/ce_mcp_bridge.lua` in Cheat Engine as usual.
-2. On Windows, start the relay:
-
-```powershell
-python C:\path\to\cheatengine-mcp-bridge\MCP_Server\ce_tcp_relay.py --host 127.0.0.1 --port 9876
-```
-
-3. In the environment where the MCP server will run, install the MCP dependency without `pywin32`, then run/configure the MCP server with TCP transport:
-
-```bash
-python3 -m pip install -r MCP_Server/requirements-tcp.txt
-```
-
-```bash
-CE_MCP_TRANSPORT=tcp \
-CE_MCP_HOST=127.0.0.1 \
-CE_MCP_PORT=9876 \
-python3 /path/to/cheatengine-mcp-bridge/MCP_Server/mcp_cheatengine.py
-```
-
-For MCP client configs that support environment variables:
-
-```json
-{
-  "servers": {
-    "cheatengine": {
-      "command": "python3",
-      "args": ["/path/to/cheatengine-mcp-bridge/MCP_Server/mcp_cheatengine.py"],
-      "env": {
-        "CE_MCP_TRANSPORT": "tcp",
-        "CE_MCP_HOST": "127.0.0.1",
-        "CE_MCP_PORT": "9876"
-      }
-    }
-  }
-}
-```
-
-Set `--host` on the relay and `CE_MCP_HOST` on the MCP server to addresses that match your network setup. Keep the relay bound to trusted interfaces only, because anyone who can reach it can control the Cheat Engine bridge.
-
-### 3. Verify Connection
-Use the `ping` tool to verify connectivity:
 ```json
 {"success": true, "version": "12.0.0", "message": "CE MCP Bridge Active"}
 ```
 
-### 4. Start Asking Questions
-```
-"What process is attached?"
-"Read 16 bytes at the base address"
-"Disassemble the entry point"
-```
+Then try: *"What process is attached?"* or *"Disassemble the entry point."*
 
 ---
 
-## 211 MCP Tools Available
+## Before you start: avoid a blue screen
 
-Every tool carries MCP annotations (read-only, destructive, idempotent, open-world). The capability profile decides
-which tools are listed and allowed; see [Safety controls](#safety-controls).
+> [!CAUTION]
+> In Cheat Engine, open **Settings → Extra** and **turn off "Query memory region routines"**.
+> With it on, scanning protected pages can crash Windows with `CLOCK_WATCHDOG_TIMEOUT`.
 
-### Memory
-| Tool | Description |
-|------|-------------|
-| `read_memory`, `read_integer`, `read_string` | Read any data type |
-| `read_pointer_chain` | Follow `[[base+0x10]+0x20]` paths |
-| `scan_all`, `aob_scan` | Find values and byte patterns |
+---
 
-### Analysis
-| Tool | Description |
-|------|-------------|
-| `disassemble`, `analyze_function` | Code analysis |
-| `dissect_structure` | Auto-detect fields and types |
-| `get_rtti_classname` | Identify C++ object types |
-| `find_references`, `find_call_references` | Cross-references |
+## Tools
 
-### Debugging
-| Tool | Description |
-|------|-------------|
-| `set_breakpoint`, `set_data_breakpoint` | Hardware breakpoints |
-| `start_dbvm_watch` | Ring -1 invisible tracing |
+The server has **211 tools**. The full list, with parameters and examples, is in
+[`AI_Context/MCP_Bridge_Command_Reference.md`](AI_Context/MCP_Bridge_Command_Reference.md). Agents can also read it
+from the server as the resource `cheatengine://docs/command-reference`.
 
-### Process Lifecycle
-| Tool | Description |
-|------|-------------|
-| `open_process`, `get_process_list` | Attach to or enumerate running processes |
-| `create_process` | Launch a new process under CE's control |
-| `pause_process`, `unpause_process` | Suspend / resume target execution |
+| Area | Examples |
+|---|---|
+| Memory | `read_memory`, `read_integer`, `read_string`, `read_pointer_chain`, `write_integer`, `write_memory` |
+| Scanning | `scan_all`, `next_scan`, `aob_scan`, `search_string`, `generate_signature` |
+| Background jobs | `start_job`, `wait_for_job`, `get_job_result`, `cancel_job` |
+| Code analysis | `disassemble`, `analyze_function`, `find_xrefs`, `find_references`, `find_string_refs` |
+| Program files (PE) | `pe_info`, `pe_imports`, `pe_exports`, `va_to_rva` |
+| Objects and structures | `get_rtti_classname`, `recover_struct`, `dissect_structure`, `create_structure` |
+| Pointers | `find_pointer_path`, `compare_pointer_paths`, `validate_pointer_chains` |
+| Snapshots | `snapshot_region`, `diff_snapshots` |
+| Debugging | `set_breakpoint`, `set_data_breakpoint`, `get_breakpoint_hits`, `start_dbvm_watch` |
+| Processes | `get_process_list`, `open_process`, `enum_modules`, `pause_process` |
+| Code and injection | `auto_assemble`, `assemble_instruction`, `inject_dll`, `execute_code`, `evaluate_lua` |
+| Cheat tables | `load_table`, `save_table`, `get_address_list`, `create_memory_record` |
+| Windows and input | `find_window`, `send_window_message`, `get_pixel`, `do_key_press` |
+| Kernel (DBK / DBVM) | `dbk_get_cr3`, `get_physical_address`, `read_process_memory_cr3` |
+| Status | `ping`, `bridge_status`, `policy_info`, `batch_commands` |
 
-### Memory Allocation
-| Tool | Description |
-|------|-------------|
-| `allocate_memory`, `free_memory` | Reserve and release memory in the target |
-| `set_memory_protection`, `full_access` | Adjust page protection flags |
-
-### Code Injection
-| Tool | Description |
-|------|-------------|
-| `inject_dll` | Load a DLL into the target process |
-| `execute_code`, `execute_method` | Run shellcode or CE Lua methods remotely |
-
-### Symbol Management
-| Tool | Description |
-|------|-------------|
-| `register_symbol`, `get_symbol_info` | Create and query named symbols |
-| `enable_windows_symbols` | Enable PDB symbol resolution |
-
-### Assembly / Compilation
-| Tool | Description |
-|------|-------------|
-| `assemble_instruction` | Assemble a single x86/x64 instruction to bytes |
-| `compile_c_code` | Compile C source into injected shellcode |
-| `generate_api_hook_script` | Generate a CE auto-assembler API hook template |
-
-### Window / GUI Automation
-| Tool | Description |
-|------|-------------|
-| `find_window` | Locate a window by title or class |
-| `send_window_message` | Post `WM_*` messages to a target window |
-
-### Input Automation
-| Tool | Description |
-|------|-------------|
-| `get_pixel` | Sample a pixel color at screen coordinates |
-| `is_key_pressed`, `do_key_press` | Query and simulate keyboard input |
-
-### Cheat Table
-| Tool | Description |
-|------|-------------|
-| `load_table`, `save_table` | Load / save `.CT` cheat table files |
-| `get_address_list` | Enumerate entries in the active cheat table |
-
-### Kernel Mode (DBK / DBVM)
-| Tool | Description |
-|------|-------------|
-| `dbk_get_cr3` | Read the CR3 register for the target process |
-| `read_process_memory_cr3` | Read physical memory via CR3 bypass |
-
-### Jobs, analysis and pointer paths (from upstream PR #65)
-| Tool | Description |
-|------|-------------|
-| `start_job`, `get_job`, `wait_for_job`, `get_job_result`, `cancel_job` | Long scans and searches without blocking CE or timing out |
-| `pe_info`, `pe_imports`, `pe_exports`, `find_xrefs`, `find_string_refs` | PE parsing and cross-references straight from target memory |
-| `recover_struct`, `rtti_scan_module` | RTTI-guided structure recovery |
-| `find_pointer_path`, `compare_pointer_paths` | Find pointer chains, then keep the ones that survive a restart |
-| `snapshot_region`, `diff_snapshots` | Before/after memory comparison |
-| `bridge_status`, `policy_info`, `batch_commands` | Health, active profile, several commands in one round trip |
-
-And many more at `AI_Context/MCP_Bridge_Command_Reference.md`, which is also served as the MCP resource
-`cheatengine://docs/command-reference`.
+Every tool is labeled for your AI client as **read-only**, **changes things**, or **destructive**, so a client can
+approve reads automatically and ask you before writes.
 
 ---
 
 ## Safety controls
 
-The bridge can write memory, run Lua, inject DLLs and execute code. Limit it to what the task needs.
+The bridge can write memory, run code and inject DLLs. Give it only the access the job needs, using a **profile**:
 
-| Profile (`CE_MCP_PROFILE`) | Allows |
+| `CE_MCP_PROFILE` | What it allows |
 |---|---|
-| `readonly` | Observe only: reads, scans, disassembly, analysis |
-| `analysis` | + breakpoints, symbols, structures, attaching, host introspection |
-| `patch` | + memory, register and protection writes, allocations |
-| `full` (default) | + code execution, injection, shell, files, input automation |
+| `readonly` | Look only: reads, scans, disassembly, analysis |
+| `analysis` | Also breakpoints, symbols, structures and attaching to processes |
+| `patch` | Also writing memory and registers, changing page protection, allocating memory |
+| `full` (default) | Everything, including running code, injection, files and simulated input |
 
-- `CE_MCP_ALLOW` / `CE_MCP_DENY` lift or remove single tools (deny wins). `CE_MCP_TOOLSET` (`minimal`, `reverse`, or a
-  list of groups) shrinks the tool list to save model context.
-- The profile is enforced in the client for every call, including the requests inside `batch_commands` and the kind
-  passed to `start_job`. An unknown profile name fails closed to `readonly`.
-- `run_command` and `shell_execute` stay disabled unless `CE_MCP_ALLOW_SHELL=1`.
-- Tool annotations are hints for the client's approval UI; the profile is the enforcement.
-- The named pipe is local to the machine. The optional TCP relay has **no authentication**: bind it to trusted
-  interfaces only.
+Set it in your client config:
+
+```json
+"env": { "CE_MCP_PROFILE": "analysis" }
+```
+
+Good to know:
+
+- The profile is checked on every call, including commands sent inside `batch_commands` or `start_job`.
+- A misspelled profile name falls back to `readonly`, not `full`.
+- `run_command` and `shell_execute` stay off unless you set `CE_MCP_ALLOW_SHELL=1`.
+- The named pipe only accepts connections from the same computer. The optional TCP relay has **no password**, so only
+  run it on a network you trust.
 
 ---
 
-## Critical Configuration
+## Settings
 
-### BSOD Prevention
-> [!CAUTION]
-> **You MUST disable:** Cheat Engine → Settings → Extra → **"Query memory region routines"**
->
-> Enabled: Causes `CLOCK_WATCHDOG_TIMEOUT` BSODs due to conflicts with DBVM/Anti-Cheat when scanning protected pages.
+All settings are environment variables for the Python server.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `CE_MCP_PROFILE` | `full` | Which tools are allowed (see [Safety controls](#safety-controls)) |
+| `CE_MCP_ALLOW` | — | Tool names to allow on top of the profile, comma-separated |
+| `CE_MCP_DENY` | — | Tool names to block, comma-separated. Wins over `CE_MCP_ALLOW` |
+| `CE_MCP_TOOLSET` | all | Show fewer tools to save the agent's context: `minimal`, `reverse`, or a list of groups |
+| `CE_MCP_TIMEOUT` | `30` | Seconds before a tool call gives up. `0` turns the limit off. Keep it below your client's own limit |
+| `CE_MCP_CONNECT_WAIT` | `2` | Seconds to wait for the pipe when Cheat Engine is busy or reloading the bridge |
+| `CE_MCP_ALLOW_SHELL` | — | Set to `1` to turn on `run_command` and `shell_execute` |
+| `CE_MCP_TRANSPORT` | `pipe` | Set to `tcp` to connect through the TCP relay instead |
+| `CE_MCP_HOST`, `CE_MCP_PORT` | `127.0.0.1`, `9876` | Where the TCP relay is listening |
+
+### Running the server somewhere else (TCP relay)
+
+If your AI client runs in WSL, a VM, a container or another computer, it can't open the Windows named pipe. Run the
+relay next to Cheat Engine instead:
+
+1. Load the bridge in Cheat Engine as usual.
+2. On Windows, start the relay:
+
+   ```powershell
+   python C:\path\to\cheatengine-mcp-bridge\MCP_Server\ce_tcp_relay.py --host 127.0.0.1 --port 9876
+   ```
+
+3. Where the MCP server runs, install `MCP_Server/requirements-tcp.txt` (no `pywin32` needed) and set:
+
+   ```json
+   "env": { "CE_MCP_TRANSPORT": "tcp", "CE_MCP_HOST": "127.0.0.1", "CE_MCP_PORT": "9876" }
+   ```
+
+Change `--host` and `CE_MCP_HOST` to match your network. Anyone who can reach the relay can control Cheat Engine.
+
+---
+
+## Example sessions
+
+**Finding a value**
+
+```
+You: "Scan for gold: 15000"            → 47 results
+You: "Gold is now 15100"               → 3 results
+You: "What writes to the first one?"   → hardware breakpoint set, writer found
+You: "Disassemble that function"       → the AddGold logic
+```
+
+**Understanding a structure**
+
+```
+You: "What's at [[game.exe+0x1234]+0x10]?"
+AI:  "It's a CPlayerInventory object.
+      0x00 vtable, 0x08 itemCount (int), 0x10 itemArray (pointer) ..."
+```
 
 ---
 
 ## Troubleshooting
 
-### Cheat Engine says "too many local variables"
+**Cheat Engine says "too many local variables"**
+Load the bridge with `dofile(...)` instead of pasting the whole script into a table script.
 
-Load the bridge from disk with `dofile(...)` instead of pasting the full script into a cheat table script. The bridge also declares command handlers as global functions intentionally; this avoids Cheat Engine's Lua chunk limit of 200 local variables when the complete bridge is compiled at once.
-
-### MCP client cannot connect
-
-Check these in order:
+**The agent can't connect**
+Check, in order:
 
 1. Cheat Engine is open and shows `MCP Server Listening on: CE_MCP_Bridge_v99`.
-2. The MCP client was restarted after adding the server config.
-3. The configured `mcp_cheatengine.py` path exists.
-4. `pip install -r MCP_Server/requirements.txt` has installed both `mcp` and `pywin32`.
-5. Run the MCP `ping` tool. A successful connection returns `success: true` and the bridge version. `process_id: 0` is normal until Cheat Engine is attached to a target process.
+2. You restarted the AI client after changing its config.
+3. The path to `mcp_cheatengine.py` in the config is correct.
+4. `pip install -r MCP_Server/requirements.txt` ran in the same Python your client starts.
+5. `ping` returns `success: true`. A `process_id` of `0` just means nothing is attached yet.
 
-### `No module named 'mcp.server.fastmcp'` or `No module named 'mcp.server.mcpserver'`
+**`No module named 'mcp.server.mcpserver'`**
+This server needs the MCP SDK 2.x, but found 1.x. Install `MCP_Server/requirements.txt` into the Python your client
+starts.
 
-The first means an old copy of the server is running against SDK 2.x; the second means this fork's server is running
-against SDK 1.x. Install this fork's `MCP_Server/requirements.txt` into the Python that your MCP client launches.
+**`No module named 'mcp.server.fastmcp'`**
+An older copy of the server (from the original project) is running with SDK 2.x. Point your client at this fork's
+`mcp_cheatengine.py`.
 
-### A call failed and says its outcome is unknown
+**A call failed and says its outcome is unknown**
+The command may have reached Cheat Engine and run anyway. The server never retries on its own, so a write can't
+happen twice by accident. Check the target first (read the memory, `list_breakpoints`, `list_jobs`), then decide
+whether to repeat it.
 
-The request may have reached Cheat Engine and run. The server never retries on its own. Check the target (read the
-memory, `list_breakpoints`, `list_jobs`) before repeating anything that writes.
-
-### `test_mcp.py` fails with `(231, 'CreateFile', ...)`
-
-Windows error 231 is `ERROR_PIPE_BUSY`: every instance of the Named Pipe is already in use.
-
-The bridge serves **one client at a time**, so this is the normal outcome when an MCP client is connected while you run the test suite — not a broken install. Stop or disconnect the MCP client, then run the suite again. Waiting will not help: the existing client holds the only instance, so a second one has nothing to connect to however long it waits.
-
----
-
-## Environment Variables
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `CE_MCP_TIMEOUT` | `30` | Timeout (seconds) for each MCP tool call; `0` or less disables it. Keep it below the MCP client's own tool timeout. |
-| `CE_MCP_CONNECT_WAIT` | `2` | Seconds to keep trying a busy or re-created pipe before failing. |
-| `CE_MCP_PROFILE` | `full` | Capability profile: `readonly`, `analysis`, `patch`, `full`. |
-| `CE_MCP_ALLOW` / `CE_MCP_DENY` | *unset* | Comma-separated tool names to add to / remove from the profile. |
-| `CE_MCP_TOOLSET` | all | `minimal`, `reverse`, or comma-separated groups to list fewer tools. |
-| `CE_MCP_TRANSPORT` | `pipe` | `tcp` to use the TCP relay (`CE_MCP_HOST`, default `127.0.0.1`; `CE_MCP_PORT`, default `9876`). |
-| `CE_MCP_ALLOW_SHELL` | *unset* | Set to `1` to enable `run_command` / `shell_execute` tools. **Arbitrary code execution risk** — leave unset by default. |
-
----
-
-## Example Workflows
-
-**Finding a value:**
-```
-You: "Scan for gold: 15000"  →  AI finds 47 results
-You: "Gold changed to 15100"  →  AI filters to 3 addresses
-You: "What writes to the first one?"  →  AI sets hardware BP
-You: "Disassemble that function"  →  Full AddGold logic revealed
-```
-
-**Understanding a structure:**
-```
-You: "What's at [[game.exe+0x1234]+0x10]?"
-AI: "RTTI: CPlayerInventory"
-AI: "0x00=vtable, 0x08=itemCount(int), 0x10=itemArray(ptr)..."
-```
-
----
-
-## Project Structure
-
-```
-AGENTS.md, CLAUDE.md                    # Agent guidance (Codex / Claude Code)
-README.md                               # User-facing documentation
-
-MCP_Server/
-├── mcp_cheatengine.py                  # Python MCP server (SDK 2.x MCPServer)
-├── tool_policy.py                      # Capability profiles, tool groups, tool annotations
-├── ce_mcp_bridge.lua                   # Cheat Engine Lua bridge
-├── ce_tcp_relay.py                     # Optional TCP relay for non-Windows MCP hosts
-└── test_mcp.py                         # Live end-to-end suite
-
-tests/                                  # Offline suites (no Cheat Engine needed) + live smoke test
-AI_Context/
-├── MCP_Bridge_Command_Reference.md     # Command reference (also an MCP resource)
-├── AI_Guide_MCP_Server_Implementation.md  # Architecture and usage guide (also an MCP resource)
-├── CE_LUA_Documentation.md             # Cheat Engine Lua API reference
-└── Pointer_Tools_*.md                  # Pointer tool design notes
-```
+**Error 231: "All pipe instances are busy"**
+The bridge serves one client at a time. Another MCP client, or a test script, is already connected. Close it and try
+again. Waiting won't help while it stays connected.
 
 ---
 
 ## Testing
 
-### Offline suites (no Cheat Engine needed)
+### Offline tests (no Cheat Engine needed)
 
 ```bash
-python tests/run_all.py              # all 15 suites, about 60 s
-python tests/run_all.py --real       # + PE/RTTI parsing against real system DLLs
-python tests/run_all.py --mutation   # + check that the suites catch deliberate breakages
+python tests/run_all.py              # all 15 suites, about a minute
+python tests/run_all.py --real       # also check PE and RTTI parsing on real Windows DLLs
+python tests/run_all.py --mutation   # also check that the tests catch deliberate bugs
 ```
 
-They run the real Lua bridge inside Cheat Engine's own `lua53-64.dll` against a fake CE API, and the Python client
-against a fake bridge on a real named pipe. Without the CE DLL the Lua suites are skipped, not failed. CI runs the
-Python suites on every push. See [`tests/README.md`](tests/README.md).
+These run the real Lua bridge inside Cheat Engine's own Lua engine (`lua53-64.dll`) against a fake Cheat Engine,
+and the Python client against a fake bridge on a real named pipe. Without Cheat Engine installed, the Lua suites are
+skipped. GitHub Actions runs the Python suites on every push. Details: [`tests/README.md`](tests/README.md).
 
-### Live end-to-end suite
+### Live tests (needs Cheat Engine)
 
-`test_mcp.py` is an end-to-end script that drives the live bridge over the Named
-Pipe. It is not a unit-test harness: every case sends a real command, and several
-of them write to the target process.
+`MCP_Server/test_mcp.py` sends real commands to a running bridge, and some of them **write to the attached process**.
+Before you run it:
 
-Preconditions:
-
-1. Cheat Engine is open with `ce_mcp_bridge.lua` loaded.
-2. A target process is attached. The write, breakpoint and allocation cases need
-   one; without it they fail or cascade-skip.
-3. **No MCP client is connected.** The bridge serves one client at a time, so a
-   running AI client holds the only pipe instance and the suite cannot open it.
-   Stop or disconnect the client first.
+1. Load the bridge in Cheat Engine.
+2. Attach a process you don't mind changing.
+3. Close your AI client, since the bridge only serves one client at a time.
 
 ```bash
 python MCP_Server/test_mcp.py
 ```
 
-The suite registers 67 cases (`all_tests` in `test_mcp.py`) and prints a
-per-category tally, then a summary in this shape:
+It prints a pass/fail count per category and exits with an error code if anything failed. Results vary with the
+target's architecture and whether DBVM is loaded.
 
-```
-======================================================================
-TOTAL: <passed> passed, <failed> failed, <skipped> skipped (of <total>)
-PASS RATE: <n>% (excluding skipped)
-======================================================================
-```
+---
 
-Exit status is non-zero when any case failed. The exact numbers depend on the
-target architecture and on whether DBVM is loaded, so there is no single expected
-transcript: the case list and the categories are defined in `test_mcp.py`.
+## What's new in this fork
+
+Compared with the original project at commit
+[`6bd7ce9`](https://github.com/miscusi-peek/cheatengine-mcp-bridge/commit/6bd7ce90479250a9b4b75e7944df9c105ecb2572)
+(August 14, 2026).
+
+### Up to date with MCP
+
+- **Runs on the MCP Python SDK 2.x.** The original still requires the older 1.x SDK.
+- **No more patching the SDK.** The fix for Windows line endings now uses the SDK's normal options.
+- **Tool labels.** Every tool tells your client whether it only reads, changes things, or is destructive
+  (119 read-only, 31 that add things, 61 destructive).
+- **Built-in instructions.** The server tells the agent the house rules when it connects.
+- **Docs inside the server.** The command reference and the usage guide are available as MCP resources.
+
+### Upstream pull requests included
+
+- [#65](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/65) and
+  [#67](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/67) by
+  [@fhjordskhkjel](https://github.com/fhjordskhkjel): background jobs, PE and cross-reference analysis, structure
+  recovery, breakpoint control, pointer path comparison, safety profiles, the offline tests, and connection fixes.
+- [#71](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/71) and parts of
+  [#66](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/66) by
+  [@397227196zyh-ops](https://github.com/397227196zyh-ops): clearer test docs, a helpful message for error 231,
+  a hit `count` on breakpoints, and a clear `INVALID_ADDRESS` error.
+
+### Fixes
+
+- **No automatic retries.** If a call fails partway, the server reports that the outcome is unknown instead of
+  sending it again. A memory write or code injection can never run twice by accident.
+- One call at a time on the pipe, so replies can't get mixed up.
+- Window handles work as `0x1234`, `1234` (hex) or plain numbers
+  ([#69](https://github.com/miscusi-peek/cheatengine-mcp-bridge/issues/69)).
+- Decimal float and double values are written correctly
+  ([#41](https://github.com/miscusi-peek/cheatengine-mcp-bridge/issues/41)).
+- Auto Assembler scripts can be added to the cheat table, switched off by default
+  ([#53](https://github.com/miscusi-peek/cheatengine-mcp-bridge/issues/53)).
+- Each fix has its own offline test, and GitHub Actions runs the tests.
+
+### Not included yet
+
+- [#68](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/68), patch undo: it can mistake a new process for
+  the old one when restoring, so it needs a safer identity check first.
+- [#70](https://github.com/miscusi-peek/cheatengine-mcp-bridge/pull/70), SDK 2.x support: replaced by this fork's own
+  migration.
+- [#63](https://github.com/miscusi-peek/cheatengine-mcp-bridge/issues/63), disconnects during long scans for `0`:
+  use `start_job` for long scans. A long live scan for `0` hasn't been tested yet.
+
+### How well it's tested
+
+| What was checked | How | Result |
+|---|---|---|
+| All 15 offline test suites | Offline, fake Cheat Engine | Pass on SDK 2.3.0 |
+| Server startup: 211 tools with labels, 2 doc resources, instructions, correct line endings | Offline | Pass |
+| Cheat Engine tutorial: attach, list modules, read memory, scan, narrow, write, read back | Live, Cheat Engine 7.7 | Passed with the 1.x SDK server; not yet repeated with 2.x |
+
+Offline tests check the bridge's own logic, not Cheat Engine itself. The debugger, DBVM, kernel and pointer-scan tools
+haven't been tested live in this fork.
 
 ---
 
 ## Credits
 
-- Original bridge: [@miscusi-peek](https://github.com/miscusi-peek) and the upstream contributors
+- **Original project:** [@miscusi-peek](https://github.com/miscusi-peek), with contributions from
   [@libangli218](https://github.com/libangli218), [@lauralex](https://github.com/lauralex),
-  [@iamtyroon](https://github.com/iamtyroon), [@HachiroSan](https://github.com/HachiroSan),
+  [@iamtyroon](https://github.com/iamtyroon), [@HachiroSan](https://github.com/HachiroSan) and
   [@Attacktive](https://github.com/Attacktive).
-- Integrated pull requests: [@fhjordskhkjel](https://github.com/fhjordskhkjel) (#65, #67) and
+- **Included pull requests:** [@fhjordskhkjel](https://github.com/fhjordskhkjel) (#65, #67) and
   [@397227196zyh-ops](https://github.com/397227196zyh-ops) (#66, #71).
-- Licensed under MIT; see [LICENSE](LICENSE). The upstream copyright notice is kept.
+- **License:** MIT, see [LICENSE](LICENSE). The original copyright notice is kept.
 
 ---
 
-## The Bottom Line
+## Disclaimer
 
-You no longer need to be an expert. Just ask the right questions.
-
-⚠️ EDUCATIONAL DISCLAIMER
-
-This code is for educational and research purposes only. It's created to show the capabilities of the Model Context Protocol (MCP) and LLM-based debugging. I do not condone the use of these tools for malicious hacking, cheating in multiplayer games, or violating Terms of Service. This is a demonstration of software engineering automation.
+This project is for education and research. Use it only on software you own or are allowed to modify. Don't use it to
+cheat in online games, attack systems, or break a program's terms of service.
