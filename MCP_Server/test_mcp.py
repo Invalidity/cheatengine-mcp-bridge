@@ -21,6 +21,14 @@ import time
 import sys
 from typing import Optional, Dict, Any, Tuple, List, Callable
 
+# The report uses symbols such as ✓ and ✗. When output is redirected on Windows, Python falls back to the
+# console code page (often cp1252), which cannot encode them and crashes the run. Always write UTF-8.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 PIPE_NAME = r"\\.\pipe\CE_MCP_Bridge_v99"
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 EXPECTED_VERSION_PREFIX = "12."
@@ -464,7 +472,8 @@ def main():
     
     all_tests["aob_scan"] = TestCase(
         "AOB Scan (MZ header)", "aob_scan",
-        params={"pattern": "4D 5A 90 00", "limit": 5},
+        # PE headers are read-only, not executable, so the default "+X" filter can never match them.
+        params={"pattern": "4D 5A 90 00", "protection": "", "limit": 5},
         validators=[
             has_field("success", bool),
             has_field("count", int),
@@ -929,9 +938,13 @@ def main():
     print("=" * 70)
     print("Note: These require DBVM/DBK driver to be loaded in CE.")
     
+    # Physical addresses need CE's kernel driver (DBK) or DBVM. Without either, skip instead of failing.
+    kernel_probe = client.send_command("evaluate_lua", {"code": "return tostring(((dbk_initialized and dbk_initialized()) or (dbvm_initialized and dbvm_initialized())) and true or false)"})
+    kernel_available = str((kernel_probe.get("result") or {}).get("result")).lower() == "true"
     all_tests["get_physical_address"] = TestCase(
         "Get Physical Address", "get_physical_address",
         params={"address": hex(module_base)},
+        skip_reason=None if kernel_available else "neither DBK nor DBVM is loaded in Cheat Engine",
         validators=[
             has_field("success", bool),
             has_field("virtual_address", str),
@@ -1605,8 +1618,10 @@ def main():
             validators=[
                 has_field("success", bool),
                 field_equals("success", True),
-                has_field("handle", int),
-                lambda r: (r.get("handle", 0) != 0,
+                # find_window returns the handle as a hex string ("0x00070A36"); the window-handle tools accept it
+                # back in that form, as plain hex or as an integer (issue #69).
+                has_field("handle", str),
+                lambda r: (int(str(r.get("handle", "0")), 16) != 0,
                            "Expected non-zero window handle"),
             ],
         )

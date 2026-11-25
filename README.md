@@ -372,10 +372,12 @@ Compared with the original project at commit
 |---|---|---|
 | All 15 offline test suites | Offline, fake Cheat Engine | Pass on SDK 2.3.0 |
 | Server startup: 211 tools with labels, 2 doc resources, instructions, correct line endings | Offline | Pass |
-| Cheat Engine tutorial: attach, list modules, read memory, scan, narrow, write, read back | Live, Cheat Engine 7.7 | Passed with the 1.x SDK server; not yet repeated with 2.x |
+| `tests/live_smoke.py`: attach, memory, scan jobs, PE and RTTI, cross-references, snapshots, pointer paths across a restart, hardware breakpoints (including break mode and the watchdog) | Live, Cheat Engine 7.7 | 74 of 74 pass |
+| `MCP_Server/test_mcp.py`: the original end-to-end suite | Live, Cheat Engine 7.7 | 67 pass, 0 fail, 5 skipped (DBVM/DBK not loaded, 2 risky cases) |
+| Real MCP client (SDK 2.x, protocol 2026-07-28) → server → bridge: read, write and read back, scans, disassembly, pointer chain, error handling, `readonly` profile blocking a write inside `batch_commands` | Live, Cheat Engine 7.7 | 22 of 22 pass |
 
-Offline tests check the bridge's own logic, not Cheat Engine itself. The debugger, DBVM, kernel and pointer-scan tools
-haven't been tested live in this fork.
+The live tests ran against a throwaway Python process, never a game. DBVM, the kernel driver (DBK) and Cheat
+Engine's own pointer scanner haven't been tested live.
 
 ---
 
