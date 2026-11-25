@@ -1,0 +1,30 @@
+name: Offline tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    # Named pipes and pywin32 need Windows. Cheat Engine's lua53-64.dll is not available on the runner,
+    # so the Lua suites report SKIP; the Python client, transport and policy suites run in full.
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: python -m pip install -r MCP_Server/requirements.txt
+      - name: Byte-compile the server
+        run: python -m py_compile MCP_Server/mcp_cheatengine.py MCP_Server/tool_policy.py MCP_Server/ce_tcp_relay.py
+      - name: Run offline suites
+        run: python tests/run_all.py -v
