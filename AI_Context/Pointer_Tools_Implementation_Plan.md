@@ -6,7 +6,7 @@
 
 **Architecture:** Thin, composable handlers in the single self-contained `ce_mcp_bridge.lua`. `analyze_pointer_access` is pure Lua (string + register arithmetic), so it is unit-tested offline with a stock `lua` interpreter. Because the full bridge will not compile under Lua 5.4+ (a const-enforcement difference in the JSON codec, `ce_mcp_bridge.lua:357`), the offline tests extract just the marked UNIT-24 slice and `load()` it over a small `toHex` fixture. `validate_pointer_chains` reuses a new shared `resolveChain` helper (extracted from `cmd_read_pointer_chain`) and is also offline-tested by stubbing the CE built-in `readPointer`. The agent orchestrates the loop between them with existing tools (`start_dbvm_watch`, `scan_all`, `get_address_info`).
 
-**Tech Stack:** Lua 5.x inside Cheat Engine (handlers), Python FastMCP (`mcp_cheatengine.py` wrappers), `lua` CLI for offline tests, `test_mcp.py` for live integration tests.
+**Tech Stack:** Lua 5.x inside Cheat Engine (handlers), Python MCP server (`mcp_cheatengine.py` wrappers), `lua` CLI for offline tests, `test_mcp.py` for live integration tests.
 
 **Reference spec:** `AI_Context/Pointer_Tools_Design.md`
 

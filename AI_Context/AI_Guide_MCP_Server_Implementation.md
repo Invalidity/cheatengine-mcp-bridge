@@ -52,7 +52,7 @@ The bridge automatically adapts to the target process architecture:
 **Connection Details:**
 - **Pipe Name:** `\\.\pipe\CE_MCP_Bridge_v99`
 - **Protocol:** Length-Prefixed JSON-RPC
-- **Flow:** Python `FastMCP` Server <-> Named Pipe <-> Lua Worker Thread <-> Main Thread (`synchronize`)
+- **Flow:** Python `MCPServer` (SDK 2.x) <-> Named Pipe <-> Lua Worker Thread <-> Main Thread (`synchronize`)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐

@@ -189,4 +189,15 @@ check("a toolset really shrinks what the model has to read", sizes["minimal"] < 
 tsr, _ = run_server(CE_MCP_TOOLSET="minimal")
 check("a hidden-by-toolset tool is still enforced by profile only (policy_info lists the hidden count)", tsr["info"]["tools_hidden"]["toolset"] > 100 and tsr["info"]["toolset"] != "all", tsr["info"]["tools_hidden"])
 
+print("-- tool annotations (hints derived from the catalogue)")
+ann = {n: tp.annotations_for(n) for n in tp.CATALOG}
+check("no WRITE/EXEC tool is annotated read-only", not [n for n, a in ann.items() if a["read_only_hint"] and tp.Policy.tier_of(n) >= tp.WRITE],
+      [n for n, a in ann.items() if a["read_only_hint"] and tp.Policy.tier_of(n) >= tp.WRITE])
+check("every WRITE/EXEC tool is annotated destructive", all(a.get("destructive_hint") for n, a in ann.items() if tp.Policy.tier_of(n) >= tp.WRITE))
+check("batch_commands is never read-only (it can carry any command)", ann["batch_commands"]["read_only_hint"] is False and ann["batch_commands"]["destructive_hint"])
+check("removal tools are destructive", all(ann[n].get("destructive_hint") for n in ("delete_snapshot", "remove_breakpoint", "clear_all_breakpoints", "free_memory", "delete_structure")))
+check("plain reads are read-only and idempotent", all(ann[n]["read_only_hint"] and ann[n]["idempotent_hint"] for n in ("read_memory", "disassemble", "list_breakpoints", "get_process_info")))
+check("unknown tools default to the most dangerous annotation", tp.annotations_for("not_a_real_tool") == {"title": "Not a real tool", "read_only_hint": False, "destructive_hint": True, "idempotent_hint": False, "open_world_hint": True})
+check("the observing analysis-tier list only names catalogued tools", tp._DEBUG_TIER_OBSERVING <= set(tp.CATALOG), tp._DEBUG_TIER_OBSERVING - set(tp.CATALOG))
+
 finish()

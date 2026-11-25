@@ -230,6 +230,35 @@ class Policy:
         return removed
 
 
+# ---- MCP tool annotations (hints for clients, derived from the catalogue above)
+# READ-tier tools that still change CE or bridge state: not read-only.
+_READ_TIER_MUTATING = set("batch_commands batch persistent_scan_destroy delete_snapshot drop_pointer_set cancel_job".split())
+# Analysis-tier tools that only observe: read-only.
+_DEBUG_TIER_OBSERVING = set((
+    "list_breakpoints get_breakpoint_hits get_halted_state debug_get_context debug_get_xmm_pointer "
+    "debug_get_last_branch_record debug_is_debugging debug_get_current_debugger_interface poll_dbvm_watch "
+    "get_watch_results get_global_variable file_exists get_file_list get_directory_list get_temp_folder "
+    "get_file_version md5_file get_pixel get_mouse_pos is_key_pressed get_screen_info find_window "
+    "get_window_caption get_window_class_name get_window_process_id get_foreground_process "
+    "dbk_get_cr0 dbk_get_cr3 dbk_get_cr4 get_physical_address get_physical_address_cr3 read_process_memory_cr3").split())
+_REMOVING_PREFIXES = ("delete_", "remove_", "clear_", "unregister_", "drop_", "free_", "unmap_", "persistent_scan_destroy")
+
+
+def annotations_for(tool):
+    """ToolAnnotations fields for one tool. Hints only: the profile and allow/deny lists are the enforcement."""
+    tier = Policy.tier_of(tool)
+    title = tool.replace("_", " ").capitalize()
+    if tool == "batch_commands":       # can carry any command, so assume the worst
+        return {"title": title, "read_only_hint": False, "destructive_hint": True, "idempotent_hint": False,
+                "open_world_hint": True}
+    read_only = (tier == READ and tool not in _READ_TIER_MUTATING) or tool in _DEBUG_TIER_OBSERVING
+    if read_only:
+        return {"title": title, "read_only_hint": True, "idempotent_hint": True, "open_world_hint": False}
+    destructive = tier >= WRITE or tool.startswith(_REMOVING_PREFIXES)
+    return {"title": title, "read_only_hint": False, "destructive_hint": destructive, "idempotent_hint": False,
+            "open_world_hint": tier == EXEC}
+
+
 def policy_from_env(env):
     return Policy(profile=(env.get("CE_MCP_PROFILE") or "full").strip().lower(), allow=_names(env.get("CE_MCP_ALLOW")),
                   deny=_names(env.get("CE_MCP_DENY")), toolset=env.get("CE_MCP_TOOLSET"))

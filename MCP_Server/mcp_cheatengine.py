@@ -2,77 +2,18 @@ import sys
 import os
 
 # ============================================================================
-# CRITICAL: WINDOWS LINE ENDING FIX FOR MCP (MONKEY-PATCH)
-# The MCP SDK's stdio_server uses TextIOWrapper without newline='\n', causing
-# Windows to output CRLF (\r\n) instead of LF (\n). This causes the error:
-# "invalid trailing data at the end of stream"
-# We MUST patch the MCP SDK BEFORE importing FastMCP.
+# WINDOWS LINE ENDINGS
+# The SDK's stdio transport wraps stdout in a TextIOWrapper with default newline
+# translation, which writes CRLF on Windows. Some clients reject the trailing CR
+# ("invalid trailing data at the end of stream"). run_stdio() below passes
+# explicitly LF-only streams through the SDK's public stdio_server() parameters,
+# so the SDK itself is no longer monkey-patched.
 # ============================================================================
 
 if sys.platform == "win32":
     import msvcrt
-    from io import TextIOWrapper
-    from contextlib import asynccontextmanager
-    
-    # Set binary mode on underlying file handles
     msvcrt.setmode(sys.stdin.fileno(), os.O_BINARY)
     msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
-    
-    # Monkey-patch the MCP SDK's stdio_server to use newline='\n'
-    import mcp.server.stdio as mcp_stdio
-    import anyio
-    import anyio.lowlevel
-    from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
-    import mcp.types as types
-    from mcp.shared.message import SessionMessage
-    
-    @asynccontextmanager
-    async def _patched_stdio_server(
-        stdin: "anyio.AsyncFile[str] | None" = None,
-        stdout: "anyio.AsyncFile[str] | None" = None,
-    ):
-        """Patched stdio_server with proper Windows newline handling."""
-        if not stdin:
-            # Use newline='\n' to prevent CRLF translation on Windows
-            stdin = anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8", newline='\n'))
-        if not stdout:
-            # Use newline='\n' to prevent CRLF translation on Windows
-            stdout = anyio.wrap_file(TextIOWrapper(_mcp_stdout.buffer, encoding="utf-8", newline='\n'))
-
-        read_stream_writer, read_stream = anyio.create_memory_object_stream(0)
-        write_stream, write_stream_reader = anyio.create_memory_object_stream(0)
-
-        async def stdin_reader():
-            try:
-                async with read_stream_writer:
-                    async for line in stdin:
-                        try:
-                            message = types.JSONRPCMessage.model_validate_json(line)
-                        except Exception as exc:
-                            await read_stream_writer.send(exc)
-                            continue
-                        session_message = SessionMessage(message)
-                        await read_stream_writer.send(session_message)
-            except anyio.ClosedResourceError:
-                await anyio.lowlevel.checkpoint()
-
-        async def stdout_writer():
-            try:
-                async with write_stream_reader:
-                    async for session_message in write_stream_reader:
-                        json = session_message.message.model_dump_json(by_alias=True, exclude_none=True)
-                        await stdout.write(json + "\n")
-                        await stdout.flush()
-            except anyio.ClosedResourceError:
-                await anyio.lowlevel.checkpoint()
-
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(stdin_reader)
-            tg.start_soon(stdout_writer)
-            yield read_stream, write_stream
-    
-    # Apply the monkey-patch
-    mcp_stdio.stdio_server = _patched_stdio_server
 
 # ============================================================================
 # STDOUT PROTECTION FOR MCP
@@ -97,16 +38,14 @@ import threading
 import traceback
 
 try:
-    from mcp.server.fastmcp import FastMCP
-    
-    # CRITICAL: Also patch the reference inside the fastmcp module
-    # FastMCP already imported stdio_server before our patch, so we need to update its reference too
-    if sys.platform == "win32":
-        import mcp.server.fastmcp.server as fastmcp_server
-        fastmcp_server.stdio_server = _patched_stdio_server
-        
+    import anyio
+    from io import TextIOWrapper
+    from mcp.server.mcpserver import MCPServer
+    from mcp.server.stdio import stdio_server
+    from mcp_types import ToolAnnotations
 except ImportError as e:
-    print(f"[MCP CE] Import Error: {e}", file=sys.stderr, flush=True)
+    print(f"[MCP CE] Import Error: {e}. This server needs the MCP Python SDK 2.x: pip install -r requirements.txt",
+          file=sys.stderr, flush=True)
     sys.exit(1)
 
 try:
@@ -632,10 +571,47 @@ def _create_bridge_client():
 ce_client = _create_bridge_client()
 
 # ============================================================================
-# MCP SERVER - v12 IMPLEMENTATION
+# MCP SERVER (SDK 2.x)
 # ============================================================================
 
-mcp = FastMCP(MCP_SERVER_NAME)
+SERVER_VERSION = "13.0.0"   # MCP server; the Lua bridge wire protocol stays v12 (pipe CE_MCP_Bridge_v99)
+
+SERVER_INSTRUCTIONS = """Cheat Engine bridge: tools act on the process Cheat Engine is attached to.
+- Start with ping (is the Lua bridge loaded?) and get_process_info; attach with open_process if needed.
+- Addresses are process-specific. Re-resolve them (symbols, AOB, pointer chains) after the target restarts.
+- A failed or timed-out call has an UNKNOWN outcome: the command may have run. The server never retries.
+  Inspect state (read memory, list_breakpoints, list_jobs) before repeating anything that writes.
+- Use start_job / wait_for_job for long scans instead of blocking calls.
+- The pipe serves one client at a time; a second MCP client or test suite gets ERROR_PIPE_BUSY (231).
+- policy_info shows which tools the capability profile (CE_MCP_PROFILE) hides.
+- Tool annotations mark read-only tools; anything else may change the target, CE or the host.
+- Reference docs: resources cheatengine://docs/command-reference and cheatengine://docs/guide."""
+
+mcp = MCPServer(MCP_SERVER_NAME, title="Cheat Engine MCP Bridge", version=SERVER_VERSION,
+                instructions=SERVER_INSTRUCTIONS)
+
+_DOCS_DIR = os.path.join(os.path.dirname(_here), "AI_Context")
+
+
+def _read_doc(filename):
+    try:
+        with open(os.path.join(_DOCS_DIR, filename), encoding="utf-8") as fh:
+            return fh.read()
+    except OSError as exc:
+        return f"{filename} is not available next to this server: {exc}"
+
+
+@mcp.resource("cheatengine://docs/command-reference", name="command-reference", mime_type="text/markdown",
+              description="Every bridge command with parameters, result shapes and workflow examples.")
+def doc_command_reference() -> str:
+    return _read_doc("MCP_Bridge_Command_Reference.md")
+
+
+@mcp.resource("cheatengine://docs/guide", name="guide", mime_type="text/markdown",
+              description="How the server, pipe and Lua bridge fit together, and how to use them well.")
+def doc_guide() -> str:
+    return _read_doc("AI_Guide_MCP_Server_Implementation.md")
+
 
 # --- PROCESS & MODULES ---
 
@@ -2649,7 +2625,7 @@ def batch_commands(requests: list[dict], stop_on_error: bool = False) -> str:
         stop_on_error: Stop at the first failing request (default: run all).
 
     Returns JSON with: success, requested, executed, failed, results[] (one result object per request, in order).
-    The call is retried automatically after a connection problem only if every request is read-only.
+    The call is never retried automatically: after a connection problem its outcome is unknown.
     """
     problems = []
     for i, req in enumerate(requests):
@@ -3185,6 +3161,9 @@ def policy_info(details: bool = False) -> str:
     return format_result(out)
 
 
+for _tool in mcp._tool_manager.list_tools():
+    _tool.annotations = ToolAnnotations(**tool_policy.annotations_for(_tool.name))
+
 _unlisted = POLICY.apply(mcp)
 if POLICY.profile != "full" or POLICY.groups is not None or POLICY.allow or POLICY.deny:
     debug_log("policy: profile=%s toolset=%s -> %d tools listed, %d hidden"
@@ -3192,10 +3171,19 @@ if POLICY.profile != "full" or POLICY.groups is not None or POLICY.allow or POLI
 
 # >>> END UNIT-29 <<<
 
+async def run_stdio():
+    """Serve MCP over stdio with LF-only line endings (see WINDOWS LINE ENDINGS at the top)."""
+    stdin = anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace", newline="\n"))
+    stdout = anyio.wrap_file(TextIOWrapper(_mcp_stdout.buffer, encoding="utf-8", newline="\n"))
+    async with stdio_server(stdin, stdout) as (read_stream, write_stream):
+        server = mcp._lowlevel_server
+        await server.run(read_stream, write_stream, server.create_initialization_options())
+
+
 if __name__ == "__main__":
     try:
-        debug_log("Starting FastMCP server (v12/v99 compatible)...")
-        mcp.run()
+        debug_log(f"Starting MCP server v{SERVER_VERSION} (bridge protocol v12, pipe v99)...")
+        anyio.run(run_stdio)
     except Exception as e:
         debug_log(f"Fatal Crash: {e}")
         traceback.print_exc(file=sys.stderr)
